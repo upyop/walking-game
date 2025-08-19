@@ -83,6 +83,10 @@
     /* 日付入力（必要時用）*/
     input[type="date"]{color:var(--muted-80)}
     input[type="date"]::-webkit-calendar-picker-indicator{ filter: invert(86%) sepia(6%) saturate(90%) hue-rotate(180deg) brightness(96%); opacity:.8 }
+  #logList{list-style:none;padding-left:0;margin:0}
+    #logList li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);margin-bottom:8px}
+    #logList .del{border:1px solid var(--line);background:transparent;color:var(--muted-80);border-radius:8px;padding:6px 10px;cursor:pointer}
+    #logList .del:hover{border-color:rgba(16,185,106,.45);color:#cfe6d9}
   </style>
 </head>
 <body>
@@ -113,13 +117,13 @@
       <div>
         <label>🏋️ 筋トレ</label>
         <div class="toggles" id="toggles">
-          <button class="toggle" data-key="plank">プランク30秒</button>
-          <button class="toggle" data-key="legraise">レッグレイズ10回</button>
-          <button class="toggle" data-key="hiplift">ヒップリフト10回</button>
+          <button type="button" class="toggle" data-key="plank">プランク30秒</button>
+          <button type="button" class="toggle" data-key="legraise">レッグレイズ10回</button>
+          <button type="button" class="toggle" data-key="hiplift">ヒップリフト10回</button>
         </div>
       </div>
       <div style="height:14px"></div>
-      <button class="btn" id="addBtn">記録する</button>
+      <button type="button" class="btn" id="addBtn">記録する</button>
 
       <div class="sep"></div>
 
@@ -155,8 +159,8 @@
       <h2 class="secTitle">📆 今週のスプリント（夜型・お腹重点）</h2>
       <ul id="sprintInfo" class="muted">
         <li>対象期間：<span id="spanPeriod"></span></li>
-        <li>目標：4日 / 8km（ウォーキング）</li>
-        <li>メモ：ウォームアップ重視。筋トレはプランクだけでも</li>
+        <li>目標：<span id="sprintTargetDays">-</span>日 / <span id="sprintTargetKm">-</span>km（ウォーキング）</li>
+        <li>メモ：<span id="sprintMemo">-</span></li>
       </ul>
       <div style="height:12px"></div>
       <label>✅ 今週の達成率</label>
@@ -176,96 +180,134 @@
   <div class="toast"><div id="toast">保存しました！</div></div>
 
   <script>
-    // ====== データ ======
-    const XP_PER_KM = 10, XP_PLANK=5, XP_LEG=5, XP_HIP=5, LEVEL_STEP=200;
-    const state = { entries: [], prevLevel:1 };
+(()=>{
+  'use strict';
+  const XP_PER_KM=10, XP_PLANK=5, XP_LEG=5, XP_HIP=5, LEVEL_STEP=200;
+  const STORAGE_KEY='walkCoreQuest_v3';
+  const state={entries:[], prevLevel:1};
+  const $=s=>document.querySelector(s);
+  const $$=s=>Array.from(document.querySelectorAll(s));
+  const fmt1=n=>(Math.round(n*10)/10).toFixed(1);
 
-    const $ = (s)=>document.querySelector(s); const $$ = (s)=>Array.from(document.querySelectorAll(s));
-    const fmt1 = (n)=> (Math.round(n*10)/10).toFixed(1);
+  // 週替わりスプリント（Lv.1〜Lv.6で止まる）
+  const plans=[
+    { name:'Lv.1: 始動週',   targetDays:4, targetKm:8,  memo:'ウォームアップ重視。筋トレはプランクだけでもOK' },
+    { name:'Lv.2: 慣らし週', targetDays:4, targetKm:10, memo:'早歩き時間を少し延長' },
+    { name:'Lv.3: ベースUP', targetDays:5, targetKm:12, memo:'お腹3種をできる日だけ実施' },
+    { name:'Lv.4: ボーナス週', targetDays:5, targetKm:14, memo:'最後5分を時速6kmで挑戦' },
+    { name:'Lv.5: 仕上げ前', targetDays:5, targetKm:15, memo:'距離は欲張らず継続最優先' },
+    { name:'Lv.6: 仕上げ週', targetDays:5, targetKm:16, memo:'睡眠・塩分控えめでむくみ対策' },
+  ];
+  const BASE_WEEK = new Date('2025-08-18'); // この週をLv.1として起点（※月曜に設定推奨）
+  function getPlanForWeek(d=new Date()){
+    const w0 = startOfWeek(BASE_WEEK).getTime();
+    const wN = startOfWeek(d).getTime();
+    const idx = Math.floor((wN - w0) / (7*24*3600*1000));
+    return plans[Math.max(0, Math.min(plans.length-1, idx))]; // 最終週(Lv.6)で止まる
+  }
 
-    // 今日のテキスト
-    function formatToday(){
-      const d=new Date();
-      const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate();
-      const wk=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
-      return `${y}.${String(m).padStart(2,'0')}.${String(day).padStart(2,'0')} ${wk}`;
+  function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function load(){ try{ const raw=localStorage.getItem(STORAGE_KEY); if(raw){ const o=JSON.parse(raw); state.entries=Array.isArray(o.entries)?o.entries:[]; state.prevLevel=typeof o.prevLevel==='number'?o.prevLevel:1; ensureIds(); } }catch(e){ console.error(e); } }
+  function genId(){ return 'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+  function ensureIds(){
+      let changed=false;
+      state.entries.forEach((en, idx)=>{
+        if(!en.id){ en.id=genId(); changed=true; }
+        if(typeof en.createdAt !== 'number'){
+          const t = en.date ? new Date(en.date).getTime() : Date.now();
+          en.createdAt = t + idx; // 安定ソート用の微調整
+          changed=true;
+        }
+      });
+      if(changed) save();
     }
 
-    function startOfWeek(d=new Date()){
-      const dt=new Date(d); const day=dt.getDay(); const diff=(day+6)%7; dt.setDate(dt.getDate()-diff); dt.setHours(0,0,0,0); return dt;
-    }
-    function endOfWeek(d=new Date()){ const s=startOfWeek(d); const e=new Date(s); e.setDate(e.getDate()+7); return e; }
+  function startOfWeek(d=new Date()){ const dt=new Date(d); const day=dt.getDay(); const diff=(day+6)%7; dt.setDate(dt.getDate()-diff); dt.setHours(0,0,0,0); return dt; }
+  function endOfWeek(d=new Date()){ const s=startOfWeek(d), e=new Date(s); e.setDate(e.getDate()+7); return e; }
+  function calcXp(en){ let xp=(Number(en.km)||0)*XP_PER_KM; if(en.plank) xp+=XP_PLANK; if(en.legraise) xp+=XP_LEG; if(en.hiplift) xp+=XP_HIP; return Math.round(xp); }
+  function formatToday(){ const d=new Date(); const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate(); const wk=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; return `${y}.${String(m).padStart(2,'0')}.${String(day).padStart(2,'0')} ${wk}`; }
 
-    function calcXp(en){ let xp=(Number(en.km)||0)*XP_PER_KM; if(en.plank)xp+=XP_PLANK; if(en.legraise)xp+=XP_LEG; if(en.hiplift)xp+=XP_HIP; return Math.round(xp); }
+  function setEgg(level,totalXp){
+    const finals=['🐓','🏆','🌟','🚀','🦄','🦅','🐉','🧿','🎯','🔥','🛡️','🧠','💪'];
+    const symbol = level>=7 ? finals[(Math.floor(totalXp/LEVEL_STEP)) % finals.length]
+                            : level>=5 ? '🐥'
+                            : level>=3 ? '🐣'
+                            : '🥚';
+    const el=$('#eggVisual'); if(el) el.textContent = symbol;
+  }
 
-    function toast(msg){ const t=$('#toast'); t.textContent=msg; requestAnimationFrame(()=>{ t.style.opacity=1; t.style.transform='translateY(0)'; setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateY(6px)'; }, 1400); }); }
+  function refresh(){
+    const s=startOfWeek(), e=endOfWeek();
+    const week=state.entries.filter(en=>{ const d=new Date(en.date); return d>=s && d<e; });
+    const byDate=new Map();
+    let sumKm=0, sumXp=0, days=0;
+    week.forEach(en=>{ const k=en.date; const v=byDate.get(k)||{km:0,xp:0,has:false}; v.km+=Number(en.km||0); v.xp+=calcXp(en); v.has=true; byDate.set(k,v); });
+    byDate.forEach(v=>{ sumKm+=v.km; sumXp+=v.xp; days+=(v.has?1:0); });
 
-    function refresh(){
-      // KPI（今週）
-      const s=startOfWeek(), e=endOfWeek();
-      const week=state.entries.filter(en=>{ const d=new Date(en.date); return d>=s && d<e; });
-      const byDate=new Map();
-      let sumKm=0, sumXp=0, days=0;
-      week.forEach(en=>{ const key=en.date; const val=byDate.get(key)||{km:0,xp:0,has:false}; val.km+=Number(en.km||0); val.xp+=calcXp(en); val.has=true; byDate.set(key,val); });
-      byDate.forEach(v=>{ sumKm+=v.km; sumXp+=v.xp; days+=(v.has?1:0) });
+    const kmEl=$('#kpiKm'), xpEl=$('#kpiXp'), dEl=$('#kpiDays');
+    if(kmEl) kmEl.textContent = `${fmt1(sumKm)} km`;
+    if(xpEl) xpEl.textContent = `${Math.round(sumXp)} XP`;
+    if(dEl) dEl.textContent = `${days} / 7`;
 
-      $('#kpiKm').textContent = `${fmt1(sumKm)} km`;
-      $('#kpiXp').textContent = `${Math.round(sumXp)} XP`;
-      $('#kpiDays').textContent = `${days} / 7`;
+    const totalXp=state.entries.reduce((s,en)=>s+calcXp(en),0);
+    const level=Math.floor(totalXp/LEVEL_STEP)+1;
+    const cur=totalXp%LEVEL_STEP;
+    const lt=$('#levelText'); if(lt) lt.textContent = `Lv. ${level} ・ 累計 ${totalXp} XP / 次のレベルまで ${LEVEL_STEP-cur} XP`;
+    const lb=$('#levelBar'); if(lb) lb.style.width = Math.min(100, Math.round((cur/LEVEL_STEP)*100)) + '%';
+    setEgg(level,totalXp);
+    if(level>state.prevLevel){ state.prevLevel=level; save(); const t=document.getElementById('toast'); if(t){ t.textContent='レベルアップ！'; t.style.opacity=1; setTimeout(()=>{ t.style.opacity=0; },1200);} }
 
-      // レベル（累計）
-      const totalXp = state.entries.reduce((s,en)=> s + calcXp(en), 0);
-      const level = Math.floor(totalXp/LEVEL_STEP) + 1; const cur = totalXp % LEVEL_STEP;
-      // width is set below to match sprint bar design
-      
-      $('#levelText').textContent = `Lv. ${level} ・ 累計 ${totalXp} XP / 次のレベルまで ${LEVEL_STEP-cur} XP`;
-      // 同デザイン化：卵下のバーも今週の達成率バーと同じロジック（%指定）に統一
-      $('#levelBar').style.width = Math.min(100, Math.round((cur/LEVEL_STEP)*100)) + '%';
+    const eDisp=new Date(endOfWeek()); eDisp.setDate(eDisp.getDate()-1);
+    const sp=$('#spanPeriod'); if(sp) sp.textContent = `${startOfWeek().getFullYear()}/${startOfWeek().getMonth()+1}/${startOfWeek().getDate()} 〜 ${eDisp.getFullYear()}/${eDisp.getMonth()+1}/${eDisp.getDate()}`;
+    const curPlan = getPlanForWeek();
+    const tDaysEl=$('#sprintTargetDays'); if(tDaysEl) tDaysEl.textContent = curPlan.targetDays;
+    const tKmEl=$('#sprintTargetKm'); if(tKmEl) tKmEl.textContent = curPlan.targetKm;
+    const memoEl=$('#sprintMemo'); if(memoEl) memoEl.textContent = curPlan.memo;
+    const sb=$('#sprintBar'); if(sb) sb.style.width = Math.min(100, Math.round((sumKm/curPlan.targetKm)*100)) + '%';
+    const sh=$('#sprintHint'); if(sh) sh.textContent = `実績：${fmt1(sumKm)} km / ${days}日`;
 
-      // 卵の段階（絵文字）+ 最終はランダム
-      const egg = $('#eggVisual');
-      const finals = ['🐓','🏆','🌟','🚀','🦄','🦅','🐉','🧿','🎯','🔥','🛡️','🧠','💪'];
-      const symbol = level>=7 ? finals[(Math.floor(totalXp/LEVEL_STEP)) % finals.length]
-                              : level>=5 ? '🐥'
-                              : level>=3 ? '🐣'
-                              : '🥚';
-      egg.textContent = symbol;
-      if(level>state.prevLevel){ state.prevLevel=level; toast('レベルアップ！'); }
-
-      // スプリント
-      const eDisp = new Date(endOfWeek()); eDisp.setDate(eDisp.getDate()-1);
-      $('#spanPeriod').textContent = `${startOfWeek().getFullYear()}/${startOfWeek().getMonth()+1}/${startOfWeek().getDate()} 〜 ${eDisp.getFullYear()}/${eDisp.getMonth()+1}/${eDisp.getDate()}`;
-      $('#sprintBar').style.width = Math.min(100, Math.round((sumKm/8)*100)) + '%';
-      $('#sprintHint').textContent = `実績：${fmt1(sumKm)} km / ${days}日`;
-
-      // ログ
-      const log=$('#logList'); log.innerHTML='';
-      const sorted=[...state.entries].sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:0));
-      sorted.slice(0,30).forEach(en=>{
+    const log = document.getElementById('logList');
+    if(log){
+      log.innerHTML = '';
+      const sorted=[...state.entries].sort((a,b)=> b.createdAt - a.createdAt);
+      sorted.slice(0,5).forEach(en=>{
         const acts=[]; if(en.plank)acts.push('プランク'); if(en.legraise)acts.push('レッグレイズ'); if(en.hiplift)acts.push('ヒップリフト');
-        const li=document.createElement('li'); li.textContent = `${en.date}  ${fmt1(Number(en.km||0))}km  ${acts.join('/')}`; log.appendChild(li);
+        const li=document.createElement('li');
+        li.innerHTML = `<span>${en.date}&nbsp;&nbsp;${fmt1(Number(en.km||0))}km&nbsp;&nbsp;${acts.join('/')}</span><button type="button" class="del" data-id="${en.id}" aria-label="削除" title="削除">❌</button>`;
+        log.appendChild(li);
       });
     }
+  }
 
-    function add(){
-      const date = new Date().toISOString().slice(0,10);
-      const km = Number($('#km').value||0);
-      const entry = {date, km, plank:false, legraise:false, hiplift:false};
-      $$('#toggles .toggle.active').forEach(el=> entry[el.dataset.key]=true);
-      if(km<=0 && !entry.plank && !entry.legraise && !entry.hiplift){ toast('距離か筋トレのどちらかを記録してね'); return; }
-      state.entries.push(entry);
-      $('#km').value=''; $$('#toggles .toggle').forEach(el=>el.classList.remove('active'));
-      refresh(); toast('保存しました！');
-    }
+  function addEntry(){
+    const km = Number($('#km')?.value || 0);
+    const toggles = $$('#toggles .toggle');
+    const entry = { id: genId(), date: new Date().toISOString().slice(0,10), createdAt: Date.now(), km, plank:false, legraise:false, hiplift:false };
+    toggles.forEach(el=>{ if(el.classList.contains('active')) entry[el.dataset.key]=true; });
+    if(km<=0 && !entry.plank && !entry.legraise && !entry.hiplift){ const t=document.getElementById('toast'); if(t){ t.textContent='距離か筋トレのどちらかを記録してね'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0,1200);} return; }
+    state.entries.push(entry);
+    save();
+    const kmEl=$('#km'); if(kmEl) kmEl.value='';
+    toggles.forEach(el=>el.classList.remove('active'));
+    refresh();
+    const t=document.getElementById('toast'); if(t){ t.textContent='保存しました！'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0,1200); }
+  }
 
-    function init(){
-      $('#todayStr').textContent = formatToday();
-      $$('#toggles .toggle').forEach(el=> el.addEventListener('click', ()=> el.classList.toggle('active')));
-      $('#addBtn').addEventListener('click', add);
-      refresh();
-    }
+  function init(){
+    const ts=$('#todayStr'); if(ts) ts.textContent = formatToday();
+    load();
+    ensureIds();
+    $$('#toggles .toggle').forEach(el=>{
+      el.addEventListener('click', (ev)=>{ ev.preventDefault(); el.classList.toggle('active'); });
+      el.setAttribute('type','button');
+    });
+    const addBtn=document.getElementById('addBtn'); if(addBtn){ addBtn.setAttribute('type','button'); addBtn.addEventListener('click', (ev)=>{ ev.preventDefault(); addEntry(); }); }
+    const logList=document.getElementById('logList'); if(logList){ logList.addEventListener('click', (ev)=>{ const b=ev.target.closest('.del'); if(!b) return; const id=b.dataset.id; state.entries = state.entries.filter(en=> en.id !== id); save(); refresh(); const t=document.getElementById('toast'); if(t){ t.textContent='削除しました'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0,1200); } }); }
+    refresh();
+  }
 
-    init();
-  </script>
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
 </body>
 </html>
