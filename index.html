@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Walk + Core Quest</title>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --accent:#10B96A;
+      --bg:#2A2C35;           /* 画面背景 */
+      --panel:#2F323C;        /* カード背景 */
+      --panel-2:#2A2D36;      /* 濃淡差用 */
+      --text:#E8EEF5;         /* 本文色 */
+      --muted:#C7CDD8;        /* ラベル色 */
+      --muted-80: rgba(199,205,216,.8);
+      --line: rgba(255,255,255,.18);
+      --line-weak: rgba(255,255,255,.12);
+      --ring: rgba(16,185,106,.35);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{      margin:0; font-family:'DotGothic16', sans-serif;
+      color:var(--text); background:var(--bg);
+    }
+    .wrap{max-width:480px;margin:32px auto;padding:0 20px}
+    .frame{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:32px}
+
+    /* 見出し */
+    .title{font-size:22px; text-align:center; margin:0 0 18px}
+
+    /* 卵（3D風） */
+    .eggArea{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px }
+    .eggEmoji{ font-size:96px; line-height:1; display:flex; align-items:center; justify-content:center; width:100%; }
+
+    /* レベル表示＆バー */
+    .levelRow{ display:flex; flex-direction:column; align-items:stretch; gap:10px; width:100%; }
+    .levelText{font-size:12px; text-align:center; color:var(--muted-80); margin-top:12px}
+    .bar{height:10px; border-radius:8px; background:linear-gradient(180deg,#3a3e4a,#333745); border:1px solid var(--line); overflow:hidden}
+    .bar>span{display:block; height:100%; width:0; background:linear-gradient(90deg,#8ef0b8,#3bd07f); transition:width .5s ease; border-radius:inherit}
+    .levelRow .bar{ width:100%; }
+
+    /* セクション区切り */
+    .sep{height:1px; border-top:1px dashed var(--line); margin:28px 0}
+
+    /* ラベル＆入力 */
+    .secTitle{display:flex;align-items:center;gap:8px; color:var(--muted-80); margin:0 0 14px; font-size:14px}
+    label{display:block; color:var(--muted-80); margin-bottom:6px; font-size:13px}
+
+    .inputBox{display:flex; align-items:center; gap:8px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:12px 14px;}
+    .inputBox input{flex:1; background:transparent; border:0; outline:0; color:var(--text); font-size:14px}
+    .suffix{color:var(--muted-80); font-size:13px}
+
+    /* トグルボタン（透明・線のみ） */
+    .toggles{display:flex; flex-direction:column; gap:10px}
+    .toggle{display:flex; align-items:center; justify-content:center; gap:8px; height:44px;
+      background:transparent; color:var(--text); border:1px solid var(--line); border-radius:10px; cursor:pointer}
+    .toggle.active{outline:2px solid var(--accent); outline-offset:-2px; border-color:rgba(16,185,106,.55)}
+
+    /* メインボタン */
+    .btn{display:flex;align-items:center;justify-content:center;height:44px;width:100%;background:linear-gradient(90deg,#3bd07f,#10B96A);border:1px solid rgba(16,185,106,.55);color:#0b1a10;border-radius:10px;cursor:pointer;box-shadow:0 6px 18px var(--ring);}
+    .btn:hover{filter:brightness(1.05)}
+
+    /* KPIカード */
+    .kpis{display:flex; flex-direction:column; gap:12px; margin-top:14px}
+    .kpi{display:flex; justify-content:space-between; align-items:center; background:var(--panel-2);
+      border:1px solid var(--line); border-radius:10px; padding:12px}
+    .kpi h3{margin:0; font-size:20px}
+    .kpi p{margin:2px 0 0; font-size:12px; color:var(--muted-80)}
+    .kpi .ico{font-size:18px; opacity:.9}
+
+    /* 箇条書き */
+    ul{margin:6px 0 0 0; padding-left:18px}
+    li{margin:6px 0; color:var(--text)}
+
+    /* トースト */
+    .toast{position:fixed; bottom:14px; left:0; right:0; display:flex; justify-content:center}
+    .toast>div{background:rgba(16,185,106,.14); border:1px solid rgba(16,185,106,.45); color:#cfe6d9; padding:8px 12px; border-radius:10px; opacity:0; transform:translateY(6px); transition:all .35s ease}
+
+    /* フォント統一 */
+    button, input, select, textarea { font-family: 'DotGothic16', sans-serif; }
+
+    /* 日付入力（必要時用）*/
+    input[type="date"]{color:var(--muted-80)}
+    input[type="date"]::-webkit-calendar-picker-indicator{ filter: invert(86%) sepia(6%) saturate(90%) hue-rotate(180deg) brightness(96%); opacity:.8 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="frame">
+      <h1 class="title">Walk + Core Quest</h1>
+
+      <!-- 卵＆レベル表示 -->
+      <div class="eggArea">
+        <div class="eggEmoji" id="eggVisual" aria-label="egg">🥚</div>
+        <div class="levelRow">
+          <div class="bar"><span id="levelBar"></span></div>
+          <div class="levelText" id="levelText">Lv. 1 ・ 累計 0 XP / 次のレベルまで 200 XP</div>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- 今日の記録 -->
+      <h2 class="secTitle">📌 今日（<span id="todayStr"></span>）の記録</h2>
+      <div style="margin-bottom:12px">
+        <label>🚶‍♀️ 歩いた距離</label>
+        <div class="inputBox">
+          <input id="km" type="number" min="0" step="0.1" placeholder="例: 2.5" />
+          <span class="suffix">km</span>
+        </div>
+      </div>
+      <div>
+        <label>🏋️ 筋トレ</label>
+        <div class="toggles" id="toggles">
+          <button class="toggle" data-key="plank">プランク30秒</button>
+          <button class="toggle" data-key="legraise">レッグレイズ10回</button>
+          <button class="toggle" data-key="hiplift">ヒップリフト10回</button>
+        </div>
+      </div>
+      <div style="height:14px"></div>
+      <button class="btn" id="addBtn">記録する</button>
+
+      <div class="sep"></div>
+
+      <!-- サマリー -->
+      <h2 class="secTitle" style="justify-content:center">サマリー</h2>
+      <div class="kpis">
+        <div class="kpi">
+          <div>
+            <h3 id="kpiKm">0.0 km</h3>
+            <p>今週の合計距離</p>
+          </div>
+          <div class="ico">🧍‍♀️</div>
+        </div>
+        <div class="kpi">
+          <div>
+            <h3 id="kpiXp">0 XP</h3>
+            <p>今週のXP</p>
+          </div>
+          <div class="ico">💎</div>
+        </div>
+        <div class="kpi">
+          <div>
+            <h3 id="kpiDays">0 / 7</h3>
+            <p>運動した日</p>
+          </div>
+          <div class="ico">📅</div>
+        </div>
+      </div>
+
+      <div class="sep"></div>
+
+      <!-- 今週のスプリント -->
+      <h2 class="secTitle">📆 今週のスプリント（夜型・お腹重点）</h2>
+      <ul id="sprintInfo" class="muted">
+        <li>対象期間：<span id="spanPeriod"></span></li>
+        <li>目標：4日 / 8km（ウォーキング）</li>
+        <li>メモ：ウォームアップ重視。筋トレはプランクだけでも</li>
+      </ul>
+      <div style="height:12px"></div>
+      <label>✅ 今週の達成率</label>
+      <div class="bar"><span id="sprintBar"></span></div>
+      <div class="levelText" id="sprintHint">実績：0.0 km / 0日</div>
+
+      <div class="sep"></div>
+
+      <!-- ログ -->
+      <h2 class="secTitle">🗒 ログ</h2>
+      <ul id="logList" style="color:var(--muted-80)">
+        <!-- ここに追加 -->
+      </ul>
+    </div>
+  </div>
+
+  <div class="toast"><div id="toast">保存しました！</div></div>
+
+  <script>
+    // ====== データ ======
+    const XP_PER_KM = 10, XP_PLANK=5, XP_LEG=5, XP_HIP=5, LEVEL_STEP=200;
+    const state = { entries: [], prevLevel:1 };
+
+    const $ = (s)=>document.querySelector(s); const $$ = (s)=>Array.from(document.querySelectorAll(s));
+    const fmt1 = (n)=> (Math.round(n*10)/10).toFixed(1);
+
+    // 今日のテキスト
+    function formatToday(){
+      const d=new Date();
+      const y=d.getFullYear(), m=d.getMonth()+1, day=d.getDate();
+      const wk=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+      return `${y}.${String(m).padStart(2,'0')}.${String(day).padStart(2,'0')} ${wk}`;
+    }
+
+    function startOfWeek(d=new Date()){
+      const dt=new Date(d); const day=dt.getDay(); const diff=(day+6)%7; dt.setDate(dt.getDate()-diff); dt.setHours(0,0,0,0); return dt;
+    }
+    function endOfWeek(d=new Date()){ const s=startOfWeek(d); const e=new Date(s); e.setDate(e.getDate()+7); return e; }
+
+    function calcXp(en){ let xp=(Number(en.km)||0)*XP_PER_KM; if(en.plank)xp+=XP_PLANK; if(en.legraise)xp+=XP_LEG; if(en.hiplift)xp+=XP_HIP; return Math.round(xp); }
+
+    function toast(msg){ const t=$('#toast'); t.textContent=msg; requestAnimationFrame(()=>{ t.style.opacity=1; t.style.transform='translateY(0)'; setTimeout(()=>{ t.style.opacity=0; t.style.transform='translateY(6px)'; }, 1400); }); }
+
+    function refresh(){
+      // KPI（今週）
+      const s=startOfWeek(), e=endOfWeek();
+      const week=state.entries.filter(en=>{ const d=new Date(en.date); return d>=s && d<e; });
+      const byDate=new Map();
+      let sumKm=0, sumXp=0, days=0;
+      week.forEach(en=>{ const key=en.date; const val=byDate.get(key)||{km:0,xp:0,has:false}; val.km+=Number(en.km||0); val.xp+=calcXp(en); val.has=true; byDate.set(key,val); });
+      byDate.forEach(v=>{ sumKm+=v.km; sumXp+=v.xp; days+=(v.has?1:0) });
+
+      $('#kpiKm').textContent = `${fmt1(sumKm)} km`;
+      $('#kpiXp').textContent = `${Math.round(sumXp)} XP`;
+      $('#kpiDays').textContent = `${days} / 7`;
+
+      // レベル（累計）
+      const totalXp = state.entries.reduce((s,en)=> s + calcXp(en), 0);
+      const level = Math.floor(totalXp/LEVEL_STEP) + 1; const cur = totalXp % LEVEL_STEP;
+      // width is set below to match sprint bar design
+      
+      $('#levelText').textContent = `Lv. ${level} ・ 累計 ${totalXp} XP / 次のレベルまで ${LEVEL_STEP-cur} XP`;
+      // 同デザイン化：卵下のバーも今週の達成率バーと同じロジック（%指定）に統一
+      $('#levelBar').style.width = Math.min(100, Math.round((cur/LEVEL_STEP)*100)) + '%';
+
+      // 卵の段階（絵文字）+ 最終はランダム
+      const egg = $('#eggVisual');
+      const finals = ['🐓','🏆','🌟','🚀','🦄','🦅','🐉','🧿','🎯','🔥','🛡️','🧠','💪'];
+      const symbol = level>=7 ? finals[(Math.floor(totalXp/LEVEL_STEP)) % finals.length]
+                              : level>=5 ? '🐥'
+                              : level>=3 ? '🐣'
+                              : '🥚';
+      egg.textContent = symbol;
+      if(level>state.prevLevel){ state.prevLevel=level; toast('レベルアップ！'); }
+
+      // スプリント
+      const eDisp = new Date(endOfWeek()); eDisp.setDate(eDisp.getDate()-1);
+      $('#spanPeriod').textContent = `${startOfWeek().getFullYear()}/${startOfWeek().getMonth()+1}/${startOfWeek().getDate()} 〜 ${eDisp.getFullYear()}/${eDisp.getMonth()+1}/${eDisp.getDate()}`;
+      $('#sprintBar').style.width = Math.min(100, Math.round((sumKm/8)*100)) + '%';
+      $('#sprintHint').textContent = `実績：${fmt1(sumKm)} km / ${days}日`;
+
+      // ログ
+      const log=$('#logList'); log.innerHTML='';
+      const sorted=[...state.entries].sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:0));
+      sorted.slice(0,30).forEach(en=>{
+        const acts=[]; if(en.plank)acts.push('プランク'); if(en.legraise)acts.push('レッグレイズ'); if(en.hiplift)acts.push('ヒップリフト');
+        const li=document.createElement('li'); li.textContent = `${en.date}  ${fmt1(Number(en.km||0))}km  ${acts.join('/')}`; log.appendChild(li);
+      });
+    }
+
+    function add(){
+      const date = new Date().toISOString().slice(0,10);
+      const km = Number($('#km').value||0);
+      const entry = {date, km, plank:false, legraise:false, hiplift:false};
+      $$('#toggles .toggle.active').forEach(el=> entry[el.dataset.key]=true);
+      if(km<=0 && !entry.plank && !entry.legraise && !entry.hiplift){ toast('距離か筋トレのどちらかを記録してね'); return; }
+      state.entries.push(entry);
+      $('#km').value=''; $$('#toggles .toggle').forEach(el=>el.classList.remove('active'));
+      refresh(); toast('保存しました！');
+    }
+
+    function init(){
+      $('#todayStr').textContent = formatToday();
+      $$('#toggles .toggle').forEach(el=> el.addEventListener('click', ()=> el.classList.toggle('active')));
+      $('#addBtn').addEventListener('click', add);
+      refresh();
+    }
+
+    init();
+  </script>
+</body>
+</html>
